@@ -25,14 +25,15 @@ SAVE_FREQ="${SAVE_FREQ:-5000}"
 LOG_FREQ="${LOG_FREQ:-200}"
 PUSH_TO_HUB="${PUSH_TO_HUB:-true}"
 VIDEO_BACKEND="${VIDEO_BACKEND:-pyav}"
+WANDB_ENABLE="${WANDB_ENABLE:-true}"
 
-if [[ -z "${HF_TOKEN:-}" ]]; then
-  echo "HF_TOKEN is not set. Export it first."
+if [[ "${PUSH_TO_HUB}" == "true" && -z "${HF_TOKEN:-}" ]]; then
+  echo "HF_TOKEN is not set. Export it first, or run with PUSH_TO_HUB=false."
   exit 1
 fi
 
-if [[ -z "${WANDB_API_KEY:-}" ]]; then
-  echo "WANDB_API_KEY is not set. Export it first."
+if [[ "${WANDB_ENABLE}" == "true" && -z "${WANDB_API_KEY:-}" ]]; then
+  echo "WANDB_API_KEY is not set. Export it first, or run with WANDB_ENABLE=false."
   exit 1
 fi
 
@@ -65,8 +66,13 @@ python -m pip install -e ".[smolvla]"
 # LeRobot 0.4.1 pins wandb<0.22, but newer wandb_v1 keys need the newer client.
 python -m pip install -U "wandb>=0.26.1" hf_transfer
 
-hf auth login --token "${HF_TOKEN}"
-wandb login --relogin "${WANDB_API_KEY}"
+if [[ -n "${HF_TOKEN:-}" ]]; then
+  hf auth login --token "${HF_TOKEN}"
+fi
+
+if [[ "${WANDB_ENABLE}" == "true" ]]; then
+  wandb login --relogin "${WANDB_API_KEY}"
+fi
 
 echo "Checking GPU..."
 nvidia-smi
@@ -98,7 +104,7 @@ lerobot-train \
   --num_workers="${NUM_WORKERS}" \
   --output_dir="${OUTPUT_DIR}" \
   --job_name="${JOB_NAME}" \
-  --wandb.enable=true \
+  --wandb.enable="${WANDB_ENABLE}" \
   --wandb.project="${WANDB_PROJECT}" \
   --wandb.mode=online \
   --wandb.disable_artifact=true \
