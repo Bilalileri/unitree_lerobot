@@ -40,6 +40,10 @@ fi
 export HF_HUB_ENABLE_HF_TRANSFER=1
 export WANDB_MODE=online
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+UNITREE_LEROBOT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+LEROBOT_PATCH="${UNITREE_LEROBOT_ROOT}/patches/lerobot_h264_video_defaults.patch"
+
 cd /workspace
 
 if [[ ! -d lerobot ]]; then
@@ -52,9 +56,15 @@ cd /workspace/lerobot
 git fetch origin
 git checkout a5b29d430105f5235eb05bbf2db5a0d747a869d6
 
-if [[ -f /workspace/unitree_lerobot/patches/lerobot_h264_video_defaults.patch ]]; then
-  git apply --check /workspace/unitree_lerobot/patches/lerobot_h264_video_defaults.patch && \
-    git apply /workspace/unitree_lerobot/patches/lerobot_h264_video_defaults.patch || true
+if [[ -f "${LEROBOT_PATCH}" ]]; then
+  if git apply --check "${LEROBOT_PATCH}"; then
+    git apply "${LEROBOT_PATCH}"
+  elif git apply --reverse --check "${LEROBOT_PATCH}"; then
+    echo "LeRobot H.264 patch already applied."
+  else
+    echo "Could not apply LeRobot H.264 patch cleanly."
+    exit 1
+  fi
 fi
 
 python3 -m venv /workspace/.venv-lerobot-smolvla
