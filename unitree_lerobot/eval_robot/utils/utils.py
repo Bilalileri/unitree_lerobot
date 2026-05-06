@@ -132,6 +132,17 @@ class EvalRealConfig:
     send_real_robot: bool = False
     use_dataset: bool = False
 
+    # Camera settings. Defaults match the current G1 Inspire FTP collection setup:
+    # one RealSense head RGB stream, no wrist cameras.
+    image_server_ip: str = "192.168.123.164"
+    image_server_port: int = 55555
+    head_camera_width: int = 640
+    head_camera_height: int = 480
+    binocular_head: bool = False
+    has_wrist_cam: bool = False
+    wrist_camera_width: int = 640
+    wrist_camera_height: int = 480
+
     rename_map: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):

@@ -1,0 +1,36 @@
+diff --git a/src/lerobot/datasets/utils.py b/src/lerobot/datasets/utils.py
+index 37d8432b..e9da70ab 100644
+--- a/src/lerobot/datasets/utils.py
++++ b/src/lerobot/datasets/utils.py
+@@ -48,7 +48,7 @@ from lerobot.utils.utils import SuppressProgressBars, is_valid_numpy_dtype_strin
+ 
+ DEFAULT_CHUNK_SIZE = 1000  # Max number of files per chunk
+ DEFAULT_DATA_FILE_SIZE_IN_MB = 100  # Max size per file
+-DEFAULT_VIDEO_FILE_SIZE_IN_MB = 500  # Max size per file
++DEFAULT_VIDEO_FILE_SIZE_IN_MB = 25  # Max size per file
+ 
+ INFO_PATH = "meta/info.json"
+ STATS_PATH = "meta/stats.json"
+diff --git a/src/lerobot/datasets/video_utils.py b/src/lerobot/datasets/video_utils.py
+index 0de79191..33657447 100644
+--- a/src/lerobot/datasets/video_utils.py
++++ b/src/lerobot/datasets/video_utils.py
+@@ -304,7 +304,7 @@ def encode_video_frames(
+     imgs_dir: Path | str,
+     video_path: Path | str,
+     fps: int,
+-    vcodec: str = "libsvtav1",
++    vcodec: str = "h264",
+     pix_fmt: str = "yuv420p",
+     g: int | None = 2,
+     crf: int | None = 30,
+@@ -354,6 +354,9 @@ def encode_video_frames(
+     if crf is not None:
+         video_options["crf"] = str(crf)
+ 
++    if vcodec == "h264":
++        video_options["preset"] = "ultrafast"
++
+     if fast_decode:
+         key = "svtav1-params" if vcodec == "libsvtav1" else "tune"
+         value = f"fast-decode={fast_decode}" if vcodec == "libsvtav1" else "fastdecode"

@@ -17,7 +17,7 @@ from unitree_lerobot.eval_robot.robot_control.robot_hand_unitree import (
 
 from unitree_lerobot.eval_robot.utils.episode_writer import EpisodeWriter
 
-from unitree_lerobot.eval_robot.robot_control.robot_hand_inspire import Inspire_Controller
+from unitree_lerobot.eval_robot.robot_control.robot_hand_inspire import Inspire_Controller, InspireFTP_Controller
 from unitree_lerobot.eval_robot.robot_control.robot_hand_brainco import Brainco_Controller
 
 
@@ -58,6 +58,13 @@ EE_CONFIG: dict[str, dict[str, Any]] = {
         "shared_mem_size": 6,
         # "out_len": 12,
     },
+    "inspire_ftp": {
+        "controller": InspireFTP_Controller,
+        "dof": 6,
+        "shared_mem_type": "Array",
+        "shared_mem_size": 6,
+        # "out_len": 12,
+    },
     "brainco": {
         "controller": Brainco_Controller,
         "dof": 6,
@@ -70,30 +77,25 @@ EE_CONFIG: dict[str, dict[str, Any]] = {
 
 def setup_image_client(args: argparse.Namespace) -> dict[str, Any]:
     """Initializes and starts the image client and shared memory."""
-    # image client: img_config should be the same as the configuration in image_server.py (of Robot's development computing unit)
-    if getattr(args, "sim", False):
-        img_config = {
-            "fps": 30,
-            "head_camera_type": "opencv",
-            "head_camera_image_shape": [480, 640],  # Head camera resolution
-            "head_camera_id_numbers": [0],
-            "wrist_camera_type": "opencv",
-            "wrist_camera_image_shape": [480, 640],  # Wrist camera resolution
-            "wrist_camera_id_numbers": [2, 4],
-        }
-    else:
-        img_config = {
-            "fps": 30,
-            "head_camera_type": "opencv",
-            "head_camera_image_shape": [480, 1280],  # Head camera resolution
-            "head_camera_id_numbers": [0],
-            "wrist_camera_type": "opencv",
-            "wrist_camera_image_shape": [480, 640],  # Wrist camera resolution
-            "wrist_camera_id_numbers": [2, 4],
-        }
+    # Keep this aligned with the collection embodiment. The current G1 Inspire FTP
+    # setup uses one 640x480 RealSense head RGB stream and no wrist cameras.
+    img_config = {
+        "fps": 30,
+        "head_camera_type": "opencv",
+        "head_camera_image_shape": [args.head_camera_height, args.head_camera_width],
+        "head_camera_id_numbers": [0],
+    }
+    if getattr(args, "has_wrist_cam", False):
+        img_config.update(
+            {
+                "wrist_camera_type": "opencv",
+                "wrist_camera_image_shape": [args.wrist_camera_height, args.wrist_camera_width],
+                "wrist_camera_id_numbers": [2, 4],
+            }
+        )
 
     ASPECT_RATIO_THRESHOLD = 2.0  # If the aspect ratio exceeds this value, it is considered binocular
-    if len(img_config["head_camera_id_numbers"]) > 1 or (
+    if getattr(args, "binocular_head", False) or len(img_config["head_camera_id_numbers"]) > 1 or (
         img_config["head_camera_image_shape"][1] / img_config["head_camera_image_shape"][0] > ASPECT_RATIO_THRESHOLD
     ):
         BINOCULAR = True
@@ -113,6 +115,7 @@ def setup_image_client(args: argparse.Namespace) -> dict[str, Any]:
 
     tv_img_shm = shared_memory.SharedMemory(create=True, size=np.prod(tv_img_shape) * np.uint8().itemsize)
     tv_img_array = np.ndarray(tv_img_shape, dtype=np.uint8, buffer=tv_img_shm.buf)
+    wrist_img_array, wrist_img_shape, wrist_img_shm = None, None, None
 
     if WRIST and getattr(args, "sim", False):
         wrist_img_shape = (img_config["wrist_camera_image_shape"][0], img_config["wrist_camera_image_shape"][1] * 2, 3)
@@ -124,6 +127,7 @@ def setup_image_client(args: argparse.Namespace) -> dict[str, Any]:
             wrist_img_shape=wrist_img_shape,
             wrist_img_shm_name=wrist_img_shm.name,
             server_address="127.0.0.1",
+            port=args.image_server_port,
         )
     elif WRIST and not getattr(args, "sim", False):
         wrist_img_shape = (img_config["wrist_camera_image_shape"][0], img_config["wrist_camera_image_shape"][1] * 2, 3)
@@ -134,9 +138,16 @@ def setup_image_client(args: argparse.Namespace) -> dict[str, Any]:
             tv_img_shm_name=tv_img_shm.name,
             wrist_img_shape=wrist_img_shape,
             wrist_img_shm_name=wrist_img_shm.name,
+            server_address=args.image_server_ip,
+            port=args.image_server_port,
         )
     else:
-        img_client = ImageClient(tv_img_shape=tv_img_shape, tv_img_shm_name=tv_img_shm.name)
+        img_client = ImageClient(
+            tv_img_shape=tv_img_shape,
+            tv_img_shm_name=tv_img_shm.name,
+            server_address="127.0.0.1" if getattr(args, "sim", False) else args.image_server_ip,
+            port=args.image_server_port,
+        )
 
     has_wrist_cam = "wrist_camera_type" in img_config
 
@@ -151,7 +162,7 @@ def setup_image_client(args: argparse.Namespace) -> dict[str, Any]:
         "wrist_img_shape": wrist_img_shape,
         "is_binocular": BINOCULAR,
         "has_wrist_cam": has_wrist_cam,
-        "shm_resources": [tv_img_shm, wrist_img_shm],
+        "shm_resources": [shm for shm in [tv_img_shm, wrist_img_shm] if shm is not None],
     }
 
 
@@ -248,12 +259,12 @@ def process_images_and_observations(
     if has_wrist_cam and current_wrist_image is not None:
         left_wrist_cam = current_wrist_image[:, : wrist_img_shape[1] // 2]
         right_wrist_cam = current_wrist_image[:, wrist_img_shape[1] // 2 :]
-    observation = {
-        "observation.images.cam_left_high": torch.from_numpy(left_top_cam),
-        "observation.images.cam_right_high": torch.from_numpy(right_top_cam) if is_binocular else None,
-        "observation.images.cam_left_wrist": torch.from_numpy(left_wrist_cam) if has_wrist_cam else None,
-        "observation.images.cam_right_wrist": torch.from_numpy(right_wrist_cam) if has_wrist_cam else None,
-    }
+    observation = {"observation.images.cam_left_high": torch.from_numpy(left_top_cam)}
+    if is_binocular:
+        observation["observation.images.cam_right_high"] = torch.from_numpy(right_top_cam)
+    if has_wrist_cam:
+        observation["observation.images.cam_left_wrist"] = torch.from_numpy(left_wrist_cam)
+        observation["observation.images.cam_right_wrist"] = torch.from_numpy(right_wrist_cam)
     current_arm_q = arm_ctrl.get_current_dual_arm_q()
 
     return observation, current_arm_q
