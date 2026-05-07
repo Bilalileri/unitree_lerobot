@@ -1,4 +1,5 @@
 import numpy as np
+import os
 import threading
 import time
 from enum import IntEnum
@@ -18,6 +19,13 @@ logger_mp = logging_mp.get_logger(__name__)
 kTopicLowCommand_Debug = "rt/lowcmd"
 kTopicLowCommand_Motion = "rt/arm_sdk"
 kTopicLowState = "rt/lowstate"
+
+
+def init_channel_factory(simulation_mode: bool):
+    if simulation_mode:
+        ChannelFactoryInitialize(1)
+    else:
+        ChannelFactoryInitialize(0, os.environ.get("UNITREE_NETWORK_INTERFACE", "enp0s31f6"))
 
 G1_29_Num_Motors = 35
 G1_23_Num_Motors = 35
@@ -88,10 +96,7 @@ class G1_29_ArmController:
         self._gradual_time = None
 
         # initialize lowcmd publisher and lowstate subscriber
-        if self.simulation_mode:
-            ChannelFactoryInitialize(1)
-        else:
-            ChannelFactoryInitialize(0)
+        init_channel_factory(self.simulation_mode)
 
         if self.motion_mode:
             self.lowcmd_publisher = ChannelPublisher(kTopicLowCommand_Motion, hg_LowCmd)
@@ -99,13 +104,11 @@ class G1_29_ArmController:
             self.lowcmd_publisher = ChannelPublisher(kTopicLowCommand_Debug, hg_LowCmd)
         self.lowcmd_publisher.Init()
         self.lowstate_subscriber = ChannelSubscriber(kTopicLowState, hg_LowState)
-        self.lowstate_subscriber.Init()
+        self.lowstate_subscriber.Init(self._lowstate_handler, 10)
         self.lowstate_buffer = DataBuffer()
 
         # initialize subscribe thread
-        self.subscribe_thread = threading.Thread(target=self._subscribe_motor_state)
-        self.subscribe_thread.daemon = True
-        self.subscribe_thread.start()
+        self.subscribe_thread = None
 
         while not self.lowstate_buffer.GetData():
             time.sleep(0.1)
@@ -151,15 +154,19 @@ class G1_29_ArmController:
 
         logger_mp.info("Initialize G1_29_ArmController OK!\n")
 
+    def _lowstate_handler(self, msg):
+        if msg is not None:
+            lowstate = G1_29_LowState()
+            for id in range(G1_29_Num_Motors):
+                lowstate.motor_state[id].q = msg.motor_state[id].q
+                lowstate.motor_state[id].dq = msg.motor_state[id].dq
+            lowstate.mode_machine = getattr(msg, "mode_machine", 0)
+            self.lowstate_buffer.SetData(lowstate)
+
     def _subscribe_motor_state(self):
         while True:
-            msg = self.lowstate_subscriber.Read()
-            if msg is not None:
-                lowstate = G1_29_LowState()
-                for id in range(G1_29_Num_Motors):
-                    lowstate.motor_state[id].q = msg.motor_state[id].q
-                    lowstate.motor_state[id].dq = msg.motor_state[id].dq
-                self.lowstate_buffer.SetData(lowstate)
+            msg = self.lowstate_subscriber.Read(1)
+            self._lowstate_handler(msg)
             time.sleep(0.002)
 
     def clip_arm_q_target(self, target_q, velocity_limit):
@@ -212,7 +219,8 @@ class G1_29_ArmController:
 
     def get_mode_machine(self):
         """Return current dds mode machine."""
-        return self.lowstate_subscriber.Read().mode_machine
+        lowstate = self.lowstate_buffer.GetData()
+        return getattr(lowstate, "mode_machine", 0)
 
     def get_current_motor_q(self):
         """Return current state q of all body motors."""
@@ -379,10 +387,7 @@ class G1_23_ArmController:
         self._gradual_time = None
 
         # initialize lowcmd publisher and lowstate subscriber
-        if self.simulation_mode:
-            ChannelFactoryInitialize(1)
-        else:
-            ChannelFactoryInitialize(0)
+        init_channel_factory(self.simulation_mode)
 
         if self.motion_mode:
             self.lowcmd_publisher = ChannelPublisher(kTopicLowCommand_Motion, hg_LowCmd)
@@ -661,10 +666,7 @@ class H1_2_ArmController:
         self._gradual_time = None
 
         # initialize lowcmd publisher and lowstate subscriber
-        if self.simulation_mode:
-            ChannelFactoryInitialize(1)
-        else:
-            ChannelFactoryInitialize(0)
+        init_channel_factory(self.simulation_mode)
         self.lowcmd_publisher = ChannelPublisher(kTopicLowCommand_Debug, hg_LowCmd)
         self.lowcmd_publisher.Init()
         self.lowstate_subscriber = ChannelSubscriber(kTopicLowState, hg_LowState)
@@ -937,10 +939,7 @@ class H1_ArmController:
         self._gradual_time = None
 
         # initialize lowcmd publisher and lowstate subscriber
-        if self.simulation_mode:
-            ChannelFactoryInitialize(1)
-        else:
-            ChannelFactoryInitialize(0)
+        init_channel_factory(self.simulation_mode)
         self.lowcmd_publisher = ChannelPublisher(kTopicLowCommand_Debug, go_LowCmd)
         self.lowcmd_publisher.Init()
         self.lowstate_subscriber = ChannelSubscriber(kTopicLowState, go_LowState)

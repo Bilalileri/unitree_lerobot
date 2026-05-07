@@ -10,3 +10,7 @@ cam_right_wrist.jpg
 cam_left_wrist.jpg
 data/
 ./data
+*.log
+wandb/
+outputs/
+unitree_lerobot/lerobot/outputs/

@@ -123,7 +123,7 @@ class EvalRealConfig:
 
     # Basic control parameters
     arm: str = "G1_29"  # G1_29, G1_23
-    ee: str = "dex3"  # dex3, dex1, inspire1, brainco
+    ee: str = ""  # empty for arms-only; otherwise dex3, dex1, inspire_ftp, inspire_dfx, brainco
 
     # Mode flags
     motion: bool = False
@@ -132,7 +132,7 @@ class EvalRealConfig:
     send_real_robot: bool = False
     use_dataset: bool = False
 
-    # Camera settings. Defaults match the current G1 Inspire FTP collection setup:
+    # Camera settings. Defaults match the current G1 arms-only collection setup:
     # one RealSense head RGB stream, no wrist cameras.
     image_server_ip: str = "192.168.123.164"
     image_server_port: int = 55555
